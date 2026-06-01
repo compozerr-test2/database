@@ -9,7 +9,7 @@ namespace Database.Data;
 
 public static class BaseEntityWithIdEntityTypeConfigurator
 {
-    public static void ConfigureAllInAssembly(Assembly assembly, ModelBuilder modelBuilder)
+    public static void ConfigureAllInAssembly(Assembly assembly, ModelBuilder modelBuilder, Func<Type, bool>? entityFilter = null)
     {
         var types = assembly.GetTypes();
 
@@ -17,6 +17,9 @@ public static class BaseEntityWithIdEntityTypeConfigurator
             .Where(t => t.BaseType != null &&
                         t.BaseType.IsGenericType &&
                         t.BaseType.GetGenericTypeDefinition() == typeof(BaseEntityWithId<>));
+
+        if (entityFilter != null)
+            entityTypes = entityTypes.Where(entityFilter);
 
         foreach (var concreteEntityType in entityTypes)
         {
@@ -46,8 +49,8 @@ public static class BaseEntityWithIdEntityTypeConfigurator
         }
     }
 
-    public static void ConfigureAllInAssemblies(IEnumerable<Assembly> assemblies, ModelBuilder modelBuilder)
-        => assemblies.Apply(assembly => ConfigureAllInAssembly(assembly, modelBuilder));
+    public static void ConfigureAllInAssemblies(IEnumerable<Assembly> assemblies, ModelBuilder modelBuilder, Func<Type, bool>? entityFilter = null)
+        => assemblies.Apply(assembly => ConfigureAllInAssembly(assembly, modelBuilder, entityFilter));
 }
 public class BaseEntityWithIdEntityTypeConfigurator<TId, TEntity> : IEntityTypeConfiguration<TEntity>
     where TId : IdBase<TId>, IId<TId>

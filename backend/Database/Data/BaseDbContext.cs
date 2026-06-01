@@ -23,9 +23,22 @@ public abstract class BaseDbContext<TDbContext>(
             modelBuilder.HasDefaultSchema(schema);
         }
 
-        BaseEntityWithIdEntityTypeConfigurator.ConfigureAllInAssemblies(AssembliesFeatureConfigureCallback.AllDifferentAssemblies, modelBuilder);
+        // Only configure entities that belong to this context's namespace root. Mapping every entity from
+        // every module and then ignoring the foreign ones (see IgnoreEntitiesInOtherContexts) works, but EF
+        // logs a MappedEntityTypeIgnoredWarning per entity for the map-then-ignore round-trip. Filtering up
+        // front skips that noise. IgnoreEntitiesInOtherContexts stays as the catch-all for foreign entities
+        // EF discovers by convention (e.g. a navigation property on a same-context entity) — those never pass
+        // through this filter, which only sees BaseEntityWithId<> types in the registered assemblies.
+        BaseEntityWithIdEntityTypeConfigurator.ConfigureAllInAssemblies(
+            AssembliesFeatureConfigureCallback.AllDifferentAssemblies,
+            modelBuilder,
+            entityType => BelongsToThisContext(entityType.Namespace));
+
         IgnoreEntitiesInOtherContexts(modelBuilder);
     }
+
+    private static readonly string? ContextNamespaceRoot =
+        typeof(TDbContext).Namespace is { } ns ? GetNamespaceRoot(ns) : null;
 
     private static string GetNamespaceRoot(string ns)
     {
@@ -33,16 +46,16 @@ public abstract class BaseDbContext<TDbContext>(
         return parts.Length > 1 ? parts[0] : ns;
     }
 
+    private static bool BelongsToThisContext(string? entityNamespace) =>
+        ContextNamespaceRoot is null
+        || (entityNamespace is { } ns && GetNamespaceRoot(ns) == ContextNamespaceRoot);
+
     private static void IgnoreEntitiesInOtherContexts(ModelBuilder modelBuilder)
     {
         var entities = modelBuilder.Model.GetEntityTypes().ToList();
         foreach (var entity in entities)
         {
-            if (entity.ClrType.Namespace is not { } nonNullEntityNamespace
-                || typeof(TDbContext).Namespace is not { } nonNullDbContextNamespace)
-                continue;
-
-            if (GetNamespaceRoot(nonNullEntityNamespace) != GetNamespaceRoot(nonNullDbContextNamespace))
+            if (!BelongsToThisContext(entity.ClrType.Namespace))
             {
                 modelBuilder.Ignore(entity.ClrType);
             }
